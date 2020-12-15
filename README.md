@@ -1,8 +1,13 @@
-# ACER-torch
-ACER[1] is an Actor-Critic Off-Policy Reinforcement Learning algorithm.
+# REACTOR-torch
+
+**WORK IN PROGRESS:** In this repo we are building the first open-source implementation of the REACTOR[1] architecture.
+We are starting from an ACER[1] implementation, adding the Distributional updates and beta-LOO loss.
+
+## ACER
+ACER[2] is an Actor-Critic Off-Policy Reinforcement Learning algorithm.
 Its main features are:
 - Multi-step Experience Replay
-- RETRACE[2] low-variance estimator for multi step returns
+- RETRACE[3] low-variance estimator for multi step returns
 - Multi-threading
 - Efficient Trust Region constraint
 
@@ -94,8 +99,11 @@ optional arguments:
 - [ ] Load and save model
 
 # References
-[1] 2017, Wang et al. 
+[1] Gruslys et al.,
+[The Reactor: A fast and sample-efficient Actor-Critic agent for Reinforcement Learning](https://arxiv.org/abs/1704.04651)
+
+[2] 2017, Wang et al. 
 [Sample Efficient Actor Critic with Experience Replay](https://arxiv.org/pdf/1611.01224.pdf)
 
-[2] 2016, Munos et al.
+[3] 2016, Munos et al.
 [Safe and efficient off-policy reinforcement learning](https://arxiv.org/pdf/1606.02647.pdf)
