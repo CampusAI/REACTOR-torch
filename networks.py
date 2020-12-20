@@ -56,7 +56,7 @@ class LinearNetwork(nn.Module):
         return x
 
 
-class DiscreteActorCriticSplit(torch.nn.Module):
+class DiscreteActorCriticSplit(nn.Module):
     """Wrapper class that keeps discrete actor and critic as separate networks.
     """
 
@@ -98,3 +98,21 @@ class DiscreteActorCriticSplit(torch.nn.Module):
     def share_memory(self):
         self.actor.share_memory()
         self.critic.share_memory()
+
+
+class DistributionalNetwork(LinearNetwork):
+
+    def __init__(self, inputs, n_actions, n_atoms, n_hidden_layers, n_hidden_units,
+                 activation=torch.relu, dtype=torch.float):
+        super(DistributionalNetwork, self).__init__(inputs=inputs, outputs=n_actions*n_atoms,
+                                                    n_hidden_layers=n_hidden_layers,
+                                                    n_hidden_units=n_hidden_units,
+                                                    activation=activation,
+                                                    activation_last_layer=nn.Softmax(dim=1),
+                                                    dtype=dtype)
+        self.n_actions = n_actions
+        self.n_atoms = n_atoms
+
+    def forward(self, *inputs):
+        x = super(DistributionalNetwork, self).forward(*inputs)
+        return x.reshape(x.shape[0], self.n_actions, self.n_atoms)
