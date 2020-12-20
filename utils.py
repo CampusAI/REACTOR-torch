@@ -23,5 +23,9 @@ def cuda_if(tensor):
     return tensor.cuda() if torch.cuda.is_available() else tensor
 
 
-def state_to_tensor(state):
+def np_to_unsq_tensor(state):
     return torch.from_numpy(state).float().unsqueeze(0)
+
+
+def squeeze_np(tensor):
+    return tensor.squeeze().numpy()

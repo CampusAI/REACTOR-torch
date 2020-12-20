@@ -209,7 +209,7 @@ class Worker:
         training_data = [] if self.done else [TraceTrainingData()]
         while t < self.n_steps:
             if self.done:  # Re-initialize objects for new episode
-                self.cur_state = utils.state_to_tensor(self.env.reset())
+                self.cur_state = utils.np_to_unsq_tensor(self.env.reset())
                 self.done = False
                 training_data.append(TraceTrainingData())
                 if len(self.episode_rewards) > 0:
@@ -226,7 +226,7 @@ class Worker:
             action = torch.multinomial(policy, num_samples=1)[0, 0]
 
             next_state, reward, done, _ = self.env.step(action.item())
-            next_state = utils.state_to_tensor(next_state)
+            next_state = utils.np_to_unsq_tensor(next_state)
 
             # Save transition in replay buffer
             self.replay_buffer.append_transition(
