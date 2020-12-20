@@ -66,7 +66,6 @@ class CategoricalDQN:
         state = np_to_unsq_tensor(env.reset())
         loop_range = tqdm.tqdm(range(n_steps))
         for step in loop_range:
-            env.render()
             with torch.no_grad():
                 z = self.z_net(state)
             if random.random() < self.epsilon:  # Random action
@@ -154,7 +153,7 @@ if __name__ == '__main__':
     state_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
 
-    n_atoms = 20
+    n_atoms = 50
     z_net = networks.DistributionalNetwork(inputs=state_dim, n_actions=act_dim, n_atoms=n_atoms,
                                            n_hidden_units=64, n_hidden_layers=2)
 
