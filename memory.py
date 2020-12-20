@@ -1,4 +1,5 @@
 import collections
+import random
 
 import numpy as np
 
@@ -137,3 +138,48 @@ class EpisodicReplayBuffer:
         if len(self._cur_trajectory.actions) >= self.min_trajectory_len:
             self.buffer.append(self._cur_trajectory)
         self._cur_trajectory = Trajectory()
+
+
+Transition = collections.namedtuple("Transition", ["state", "action", "reward", "next_state"])
+
+
+class TransitionReplayBuffer:
+    """Implementation of a replay buffer that stores (s, a, r, s') transitions.
+    """
+
+    def __init__(self, maxlen):
+        self.maxlen = maxlen
+        self.buffer = []
+        self.index = 0
+        self.cur_len = 0
+
+    def remember(self, transition):
+        """Remember a transition in the form (s, a, r, s') where s' is None if done.
+
+        Args:
+            transition (Transition): A tuple (s, a, r, s') where all elements are tensors and s'
+                is None if it is a terminal state.
+        """
+        if self.cur_len < self.maxlen:
+            self.buffer.append(transition)
+        else:
+            self.buffer[self.index] = transition
+        self.cur_len = min(self.cur_len + 1, self.maxlen)
+        self.index = (self.index + 1) % self.maxlen
+
+    def sample(self, batch_size):
+        """Sample a batch of transitions uniformly from the buffer.
+
+        Args:
+            batch_size (int): Number of transitions to sample.
+
+        Returns:
+            A list of sampled transitions.
+        """
+        assert self.cur_len >= batch_size, \
+            f'Cannot sample {batch_size} elements from buffer of size {self.cur_len}'
+        indices = random.sample(range(self.cur_len), batch_size)
+        return [self.buffer[i] for i in indices]
+
+    def size(self):
+        return self.cur_len
