@@ -40,7 +40,8 @@ def select_argmax_action(z, atoms):
 class CategoricalDQN:
 
     def __init__(self, z_net, n_atoms, v_min, v_max, df=0.99, buffer_len=1e6, batch_size=32,
-                 update_mode='hard', update_every=10, tau=0.05, epsilon=0.1, start_train_at=2000):
+                 lr=0.5e-3, update_mode='hard', update_every=10, tau=0.05, epsilon=0.1,
+                 start_train_at=2000):
         self.z_net = z_net
         self.n_atoms = n_atoms
         self.v_min = v_min
@@ -56,7 +57,7 @@ class CategoricalDQN:
         self.start_train_at = start_train_at
         self.replay_buffer = memory.TransitionReplayBuffer(maxlen=buffer_len)
         self._target_net = copy.deepcopy(z_net)
-        self.optimizer = torch.optim.Adam(self.z_net.parameters())
+        self.optimizer = torch.optim.Adam(self.z_net.parameters(), lr=lr)
         self.atoms = torch.arange(self.v_min, self.v_max, self.delta).unsqueeze(0)
 
     def train(self, env: gym.Env, n_steps):
@@ -65,7 +66,9 @@ class CategoricalDQN:
         state = np_to_unsq_tensor(env.reset())
         loop_range = tqdm.tqdm(range(n_steps))
         for step in loop_range:
-            z = self.z_net(state)
+            env.render()
+            with torch.no_grad():
+                z = self.z_net(state)
             if random.random() < self.epsilon:  # Random action
                 action = torch.LongTensor([[env.action_space.sample()]])
             else:
@@ -74,6 +77,7 @@ class CategoricalDQN:
             next_state = np_to_unsq_tensor(next_state) if not done else None
             self.replay_buffer.remember(
                 Transition(state, action, torch.tensor([[reward]]), next_state))
+            state = next_state
 
             # Perform training step
             self._train_step(step)
@@ -87,7 +91,7 @@ class CategoricalDQN:
                 loop_range.set_description(f'Reward {rewards[-1]}')
 
     def _train_step(self, step):
-        if step < self.start_train_at:
+        if step < self.start_train_at or self.replay_buffer.size() < self.batch_size:
             return
         batch = self.replay_buffer.sample(self.batch_size)
         states, actions, rewards, next_states, mask = extract(batch)
@@ -99,7 +103,7 @@ class CategoricalDQN:
         z = self.z_net(states)
         z = torch.cat([z[i, actions[i]] for i in range(z.shape[0])])
         # Compute cross-entropy loss
-        loss = (targets * z.log()).sum(dim=-1).mean()
+        loss = -(targets * z.log()).sum(dim=-1).mean()
         loss.backward()
         self.optimizer.step()
         if update:
@@ -121,8 +125,8 @@ class CategoricalDQN:
         atoms = torch.arange(self.v_min, self.v_max, self.delta)
         atoms = (rewards + self.df * mask[:, None] * atoms).clamp(min=self.v_min, max=self.v_max)
         b = (atoms - self.v_min) / self.delta
-        l, u = torch.floor(b).long(), torch.ceil(b).long()  # Alignments with standard atoms
-
+        l = torch.floor(b).long()
+        u = torch.ceil(b).clamp(max=self.n_atoms - 1).long()  # Prevent out of bounds
         # Predict next state return distribution for each action
         with torch.no_grad():
             z_prime = self._target_net(next_states)
@@ -150,9 +154,10 @@ if __name__ == '__main__':
     state_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
 
-    n_atoms = 2
+    n_atoms = 20
     z_net = networks.DistributionalNetwork(inputs=state_dim, n_actions=act_dim, n_atoms=n_atoms,
-                                           n_hidden_units=128, n_hidden_layers=3)
+                                           n_hidden_units=64, n_hidden_layers=2)
 
-    DDQN = CategoricalDQN(z_net=z_net, n_atoms=n_atoms, v_min=0, v_max=200)
-    DDQN.train(env=env, n_steps=10000)
+    DDQN = CategoricalDQN(z_net=z_net, n_atoms=n_atoms, v_min=0, v_max=100, start_train_at=32,
+                          update_every=5)
+    DDQN.train(env=env, n_steps=30000)
