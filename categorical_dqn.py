@@ -5,30 +5,10 @@ import tqdm
 import gym
 import torch
 
-import memory
-from memory import Transition
+from replay_buffer import memory
+from replay_buffer.transition import Transition
+from replay_buffer.utilities import unpack_transition_list
 from utils import np_to_unsq_tensor, squeeze_np
-
-
-def extract(transitions):
-    """Extract tensors of s, a, r, s' from a batch of transitions.
-
-    Args:
-        transitions (list): List of Transition named tuples where next_state is None if episode
-            ended.
-
-    Returns:
-        (states, actions, rewards, next_states, mask) that are all (batch_size, *shape) tensors
-        containing the extracted data. next_states does not contain elements for episode that
-        ended. mask is a boolean tensor that specifies which transitions have a next state.
-    """
-    states = torch.cat([t.state for t in transitions])
-    actions = torch.cat([t.action for t in transitions])
-    rewards = torch.cat([t.reward for t in transitions])
-    mask = torch.tensor([t.next_state is not None for t in transitions])
-    next_states = torch.cat([t.next_state for t in transitions if t.next_state is not None])
-    return states, actions, rewards, next_states, mask
-
 
 def select_argmax_action(z, atoms):
     # Take state-action distribution z, which is a (batch_size, action_size, n_atoms) and
@@ -93,7 +73,7 @@ class CategoricalDQN:
         if step < self.start_train_at or self.replay_buffer.size() < self.batch_size:
             return
         batch = self.replay_buffer.sample(self.batch_size)
-        states, actions, rewards, next_states, mask = extract(batch)
+        states, actions, rewards, next_states, mask, _, _ = unpack_transition_list(batch)
         targets = self._compute_targets(rewards, next_states, mask)
         self._train_net(states, actions, targets, update=(step % self.update_every) == 0)
 
