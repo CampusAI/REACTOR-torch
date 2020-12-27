@@ -35,13 +35,14 @@ class CategoricalDQN:
             start_train_at (int, optional): Number of initial steps in the environment taken before starting training. Defaults to 2000.
         """
         self.z_net = z_net
-        
+
         # Discretization parameters
         self._n_atoms = n_atoms
         self._v_min = v_min
         self._v_max = v_max
         self._delta = (v_max - v_min) / n_atoms
-        self._atoms = torch.arange(self._v_min, self._v_max, self._delta).unsqueeze(0)
+        self._atoms = torch.arange(
+            self._v_min, self._v_max, self._delta).unsqueeze(0)
 
         # DQN parameters
         self._discount_factor = discount_factor
@@ -53,7 +54,7 @@ class CategoricalDQN:
         self._tau = tau
         self._epsilon = epsilon
         self._start_train_at = start_train_at
-        self._replay_buffer = memory.TransitionReplayBuffer(maxlen=buffer_len)
+        self._replay_buffer = memory.ReplayBuffer(max_size=buffer_len)
         self._target_net = copy.deepcopy(z_net)
         self._optimizer = torch.optim.Adam(self.z_net.parameters(), lr=lr)
 
@@ -73,8 +74,12 @@ class CategoricalDQN:
                 action = self._select_argmax_action(z, self._atoms)
             next_state, reward, done, info = env.step(squeeze_np(action))
             next_state = np_to_unsq_tensor(next_state) if not done else None
-            self._replay_buffer.remember(
-                Transition(state, action, torch.tensor([[reward]]), next_state))
+            self._replay_buffer.append(
+                Transition(s=state,
+                           a=action,
+                           r=torch.tensor([[reward]]),
+                           done=done,
+                           next_s=next_state))
             state = next_state
 
             # Perform training step
@@ -90,20 +95,22 @@ class CategoricalDQN:
                 current_episode_reward = 0.
                 current_episode_len = 0.
                 loop_range.set_description(f'Reward {episode_rewards[-1]}')
-    
-    def _select_argmax_action(z, atoms):
+
+    def _select_argmax_action(self, z, atoms):
         # Take state-action distribution z, which is a (batch_size, action_size, n_atoms) and
         # returns a tensor of shape (batch_size, 1) with the greedy actions for each state
         q_values = (z * (atoms[:, None, :] + self._delta/2)).sum(dim=-1)
         return q_values.argmax(dim=-1).unsqueeze(1)
 
     def _train_step(self, step):
-        if step < self._start_train_at or self._replay_buffer.size() < self._batch_size:
+        if step < self._start_train_at or len(self._replay_buffer) < self._batch_size:
             return
         batch = self._replay_buffer.sample(self._batch_size)
-        states, actions, rewards, next_states, mask, _, _ = unpack_transition_list(batch)
+        states, actions, rewards, next_states, mask, _, _ = unpack_transition_list(
+            batch)
         targets = self._compute_targets(rewards, next_states, mask)
-        self._train_net(states, actions, targets, update=(step % self._update_freq) == 0)
+        self._train_net(states, actions, targets,
+                        update=(step % self._update_freq) == 0)
 
     def _train_net(self, states, actions, targets, update):
         self._optimizer.zero_grad()
@@ -122,30 +129,36 @@ class CategoricalDQN:
             self._target_net.load_state_dict(self.z_net.state_dict())
         else:
             for param, target_param in zip(self.z_net.parameters(), self._target_net.parameters()):
-                target_param.copy_(self._tau * param + (1 - self._tau) * target_param)
+                target_param.copy_(self._tau * param +
+                                   (1 - self._tau) * target_param)
 
     def _compute_targets(self, rewards, next_states, mask):
         """Compute the target distributions for the given transitions.
         """
-        # rewards = (batch_size, 1) 
+        # rewards = (batch_size, 1)
         # next_states = (n, *state_shape)
         # mask = (batch_size) of booleans
         # All these are (batch_size, *shape) tensors
         atoms = torch.arange(self._v_min, self._v_max, self._delta)
-        atoms = (rewards + self._discount_factor * mask[:, None] * atoms).clamp(min=self._v_min, max=self._v_max)
-        b = (atoms - self._v_min) / self._delta  # Project next state atoms into current state atoms
+        atoms = (rewards + self._discount_factor *
+                 mask[:, None] * atoms).clamp(min=self._v_min, max=self._v_max)
+        # Project next state atoms into current state atoms
+        b = (atoms - self._v_min) / self._delta
         l = torch.floor(b).clamp(min=0).long()
-        u = torch.ceil(b).clamp(max=self._n_atoms - 1).long()  # Prevent out of bounds
+        u = torch.ceil(b).clamp(max=self._n_atoms -
+                                1).long()  # Prevent out of bounds
         # Predict next state return distribution for each action
         with torch.no_grad():
             z_prime = self._target_net(next_states)  # (n, n_actions, n_atoms)
         target_actions = self._select_argmax_action(z_prime, atoms[mask])
         # TODO: Do this with gather or similar
-        z_prime = torch.cat([z_prime[i, target_actions[i]] for i in range(z_prime.shape[0])])  # (n , n_atoms)
+        z_prime = torch.cat([z_prime[i, target_actions[i]]
+                             for i in range(z_prime.shape[0])])  # (n , n_atoms)
 
         # For elements that do not have a next state, atoms are all equal to reward and we set a
         # uniform distribution (it will collapse to the same atom in any case)
-        probabilities = torch.ones((self._batch_size, self._n_atoms)) / self._n_atoms
+        probabilities = torch.ones(
+            (self._batch_size, self._n_atoms)) / self._n_atoms
         probabilities[mask] = z_prime
         # Compute partitions of atoms
         lower = probabilities * (u - b)
