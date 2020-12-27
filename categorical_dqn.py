@@ -126,7 +126,6 @@ class CategoricalDQN:
 
     def _compute_targets(self, rewards, next_states, mask):
         """Compute the target distributions for the given transitions.
-
         """
         # rewards = (batch_size, 1) 
         # next_states = (n, *state_shape)
@@ -134,15 +133,15 @@ class CategoricalDQN:
         # All these are (batch_size, *shape) tensors
         atoms = torch.arange(self._v_min, self._v_max, self._delta)
         atoms = (rewards + self._discount_factor * mask[:, None] * atoms).clamp(min=self._v_min, max=self._v_max)
-        b = (atoms - self._v_min) / self._delta
-        l = torch.floor(b).long()
+        b = (atoms - self._v_min) / self._delta  # Project next state atoms into current state atoms
+        l = torch.floor(b).clamp(min=0).long()
         u = torch.ceil(b).clamp(max=self._n_atoms - 1).long()  # Prevent out of bounds
         # Predict next state return distribution for each action
         with torch.no_grad():
-            z_prime = self._target_net(next_states)
-        target_actions = select_argmax_action(z_prime, atoms[mask])
+            z_prime = self._target_net(next_states)  # (n, n_actions, n_atoms)
+        target_actions = self._select_argmax_action(z_prime, atoms[mask])
         # TODO: Do this with gather or similar
-        z_prime = torch.cat([z_prime[i, target_actions[i]] for i in range(z_prime.shape[0])])
+        z_prime = torch.cat([z_prime[i, target_actions[i]] for i in range(z_prime.shape[0])])  # (n , n_atoms)
 
         # For elements that do not have a next state, atoms are all equal to reward and we set a
         # uniform distribution (it will collapse to the same atom in any case)
